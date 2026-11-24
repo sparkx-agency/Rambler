@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -95,6 +96,11 @@ class SetupActivity : ComponentActivity() {
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    VoiceFlowLogo(
+                        modifier = Modifier.size(56.dp),
+                        listenState = ListenState.IDLE
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
                     Text(
                         text = "VoiceFlow Keyboard",
                         color = Color.White,

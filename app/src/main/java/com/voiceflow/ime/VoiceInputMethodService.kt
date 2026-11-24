@@ -50,7 +50,7 @@ class VoiceInputMethodService : InputMethodService(),
     var listenState by mutableStateOf(ListenState.IDLE)
     var audioLevel by mutableFloatStateOf(0f)
     var showQwertyDrawer by mutableStateOf(false)
-    var statusLabel by mutableStateOf("Tap or hold pill to speak")
+    var statusLabel by mutableStateOf("Tap or hold to speak")
     var lastCommittedPhrase by mutableStateOf("")
 
     private var speechRecognizer: SpeechRecognizer? = null
@@ -97,6 +97,7 @@ class VoiceInputMethodService : InputMethodService(),
                     audioLevel = audioLevel,
                     showQwertyDrawer = showQwertyDrawer,
                     statusLabel = statusLabel,
+                    canUndoLastPhrase = lastCommittedPhrase.isNotEmpty(),
                     onStartListening = { startVoiceRecognition() },
                     onStopListening = { stopVoiceRecognition() },
                     onCancelOrReset = { cancelVoiceRecognition() },
@@ -106,9 +107,11 @@ class VoiceInputMethodService : InputMethodService(),
                     },
                     onSwitchSystemKeyboard = { switchToPreviousOrNextIme() },
                     onCommitText = { text ->
+                        lastCommittedPhrase = ""
                         currentInputConnection?.commitText(text, 1)
                     },
                     onBackspace = {
+                        lastCommittedPhrase = ""
                         currentInputConnection?.deleteSurroundingText(1, 0)
                     },
                     onUndoLastPhrase = {
@@ -119,6 +122,7 @@ class VoiceInputMethodService : InputMethodService(),
                         }
                     },
                     onEnterKey = {
+                        lastCommittedPhrase = ""
                         sendDefaultEditorAction(true)
                     }
                 )
@@ -129,11 +133,14 @@ class VoiceInputMethodService : InputMethodService(),
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+        if (!restarting) {
+            lastCommittedPhrase = ""
+        }
         if (listenState == ListenState.IDLE &&
             statusLabel.startsWith("Grant mic") &&
             checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         ) {
-            statusLabel = "Tap or hold pill to speak"
+            statusLabel = "Tap or hold to speak"
         }
     }
 
@@ -335,11 +342,11 @@ class VoiceInputMethodService : InputMethodService(),
             val toInsert = "$cleaned "
             currentInputConnection?.commitText(toInsert, 1)
             lastCommittedPhrase = toInsert
-            statusLabel = "✦ Inserted"
+            statusLabel = "Inserted"
         } else {
             currentInputConnection?.setComposingText("", 1)
             currentInputConnection?.finishComposingText()
-            statusLabel = errorStatus ?: "Tap or hold pill to speak"
+            statusLabel = errorStatus ?: "Tap or hold to speak"
         }
 
         accumulatedText.clear()
