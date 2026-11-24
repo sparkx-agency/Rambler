@@ -154,7 +154,7 @@ class VoiceInputMethodService : InputMethodService(),
 
             override fun onError(error: Int) {
                 if (listenState == ListenState.LISTENING &&
-                    (error == SpeechRecognizer.ERROR_NO_SPEECH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT)
+                    (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT)
                 ) {
                     launchRecognizerIntent()
                 } else {
