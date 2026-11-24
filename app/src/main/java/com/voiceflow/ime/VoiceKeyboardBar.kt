@@ -2,7 +2,6 @@ package com.voiceflow.ime
 
 import android.provider.Settings
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -385,38 +384,39 @@ private fun VoiceFloatingDock(
                 )
             }
 
-            AnimatedVisibility(
-                visible = canUndoLastPhrase && listenState == ListenState.IDLE,
-                enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.9f),
-                exit = fadeOut(tween(120)) + scaleOut(targetScale = 0.9f),
-                modifier = Modifier.align(Alignment.CenterEnd)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .scale(undoScale)
-                        .clip(CircleShape)
-                        .background(Color(0xFF1E2636).copy(alpha = 0.92f))
-                        .border(1.dp, Color.White.copy(alpha = 0.14f), CircleShape)
-                        .combinedClickable(
-                            interactionSource = undoInteraction,
-                            indication = null,
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                onUndoLastPhrase()
-                            }
-                        )
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+            Box(modifier = Modifier.align(Alignment.CenterEnd)) {
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = canUndoLastPhrase && listenState == ListenState.IDLE,
+                    enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.9f),
+                    exit = fadeOut(tween(120)) + scaleOut(targetScale = 0.9f)
                 ) {
-                    UndoIcon(modifier = Modifier.size(12.dp), tint = Color(0xFF93C5FD))
-                    Text(
-                        text = "Undo",
-                        color = Color(0xFFE2E8F0),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = 0.2.sp
-                    )
+                    Row(
+                        modifier = Modifier
+                            .scale(undoScale)
+                            .clip(CircleShape)
+                            .background(Color(0xFF1E2636).copy(alpha = 0.92f))
+                            .border(1.dp, Color.White.copy(alpha = 0.14f), CircleShape)
+                            .combinedClickable(
+                                interactionSource = undoInteraction,
+                                indication = null,
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onUndoLastPhrase()
+                                }
+                            )
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        UndoIcon(modifier = Modifier.size(12.dp), tint = Color(0xFF93C5FD))
+                        Text(
+                            text = "Undo",
+                            color = Color(0xFFE2E8F0),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 0.2.sp
+                        )
+                    }
                 }
             }
         }
