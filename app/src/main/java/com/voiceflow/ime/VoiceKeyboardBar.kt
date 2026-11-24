@@ -73,7 +73,6 @@ fun VoiceKeyboardScreen(
             .navigationBarsPadding()
     ) {
         if (!showQwertyDrawer) {
-            // Minimalist Bottom-Center Gemini Oval Tab Bar
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -81,7 +80,6 @@ fun VoiceKeyboardScreen(
                     .padding(horizontal = 24.dp),
                 contentAlignment = Alignment.Center
             ) {
-                // Ambient Bottom Light Bleed
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -103,7 +101,6 @@ fun VoiceKeyboardScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // LEFT BUTTON: Tap for built-in QWERTY, Long-press for System Keyboard Switcher
                     Box(
                         modifier = Modifier
                             .size(50.dp)
@@ -125,9 +122,7 @@ fun VoiceKeyboardScreen(
                         Text("⌨", fontSize = 20.sp, color = Color(0xFFCBD5E1))
                     }
 
-                    // CENTER OVAL PILL: Gemini Voice Mode Button
                     Box(contentAlignment = Alignment.Center) {
-                        // Voice-reactive outer halo
                         val haloScale = if (listenState == ListenState.LISTENING) 1.06f + (audioLevel * 0.22f) else 1f
                         Box(
                             modifier = Modifier
@@ -139,7 +134,6 @@ fun VoiceKeyboardScreen(
                                 .background(geminiBrush)
                         )
 
-                        // Interactive Glowing Pill
                         Box(
                             modifier = Modifier
                                 .width(146.dp)
@@ -188,7 +182,6 @@ fun VoiceKeyboardScreen(
                         }
                     }
 
-                    // RIGHT BUTTON: Tap = Backspace, Long-Press = Undo Entire Last Dictated Phrase
                     Box(
                         modifier = Modifier
                             .size(50.dp)
@@ -212,7 +205,6 @@ fun VoiceKeyboardScreen(
                 }
             }
         } else {
-            // Compact Built-in QWERTY Drawer
             CompactQwertyPanel(
                 onBackToVoice = onToggleQwerty,
                 onKeyPress = onCommitText,
@@ -243,7 +235,6 @@ private fun CompactQwertyPanel(
             .padding(horizontal = 6.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        // Top pill to return immediately to Gemini Voice Orb
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -299,7 +290,6 @@ private fun CompactQwertyPanel(
             }
         }
 
-        // Bottom Space + Enter Row
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)

@@ -41,7 +41,6 @@ class VoiceInputMethodService : InputMethodService(),
     override val savedStateRegistry: SavedStateRegistry
         get() = savedStateRegistryController.savedStateRegistry
 
-    // Reactive UI State
     var listenState by mutableStateOf(ListenState.IDLE)
     var audioLevel by mutableFloatStateOf(0f)
     var showQwertyDrawer by mutableStateOf(false)
@@ -146,7 +145,6 @@ class VoiceInputMethodService : InputMethodService(),
             override fun onBeginningOfSpeech() {}
 
             override fun onRmsChanged(rmsdB: Float) {
-                // Normalize dB (-2..10) to 0f..1f for the glowing pill pulse
                 audioLevel = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)
             }
 
@@ -226,7 +224,6 @@ class VoiceInputMethodService : InputMethodService(),
         currentInputConnection?.finishComposingText()
 
         if (cleaned.isNotEmpty()) {
-            // Replace composing text cleanly with polished text + trailing space
             currentInputConnection?.setComposingText("", 1)
             val toInsert = "$cleaned "
             currentInputConnection?.commitText(toInsert, 1)

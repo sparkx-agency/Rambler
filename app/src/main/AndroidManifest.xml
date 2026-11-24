@@ -15,7 +15,6 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
-        <!-- Companion Setup Activity (Requests Mic Permission & Opens Keyboard Settings) -->
         <activity
             android:name=".SetupActivity"
             android:exported="true">
@@ -25,7 +24,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Minimalist Voice Input Method Service -->
         <service
             android:name=".VoiceInputMethodService"
             android:exported="true"
