@@ -1,8 +1,13 @@
 package com.voiceflow.ime
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.inputmethodservice.InputMethodService
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -35,6 +40,7 @@ class VoiceInputMethodService : InputMethodService(),
     private val lifecycleRegistry = LifecycleRegistry(this)
     private val store = ViewModelStore()
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override val lifecycle: Lifecycle get() = lifecycleRegistry
     override val viewModelStore: ViewModelStore get() = store
@@ -48,7 +54,22 @@ class VoiceInputMethodService : InputMethodService(),
     var lastCommittedPhrase by mutableStateOf("")
 
     private var speechRecognizer: SpeechRecognizer? = null
+    private var usingOnDeviceRecognizer = false
+    private var triedCloudFallback = false
     private var accumulatedText = StringBuilder()
+
+    private val processingTimeoutRunnable = Runnable {
+        if (listenState == ListenState.PROCESSING) {
+            runCatching { speechRecognizer?.cancel() }
+            finalizeAndCommit()
+        }
+    }
+
+    private val relaunchRunnable = Runnable {
+        if (listenState == ListenState.LISTENING) {
+            launchRecognizerIntent()
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -78,8 +99,9 @@ class VoiceInputMethodService : InputMethodService(),
                     statusLabel = statusLabel,
                     onStartListening = { startVoiceRecognition() },
                     onStopListening = { stopVoiceRecognition() },
+                    onCancelOrReset = { cancelVoiceRecognition() },
                     onToggleQwerty = {
-                        if (listenState == ListenState.LISTENING) stopVoiceRecognition()
+                        if (listenState != ListenState.IDLE) cancelVoiceRecognition()
                         showQwertyDrawer = !showQwertyDrawer
                     },
                     onSwitchSystemKeyboard = { switchToPreviousOrNextIme() },
@@ -107,91 +129,161 @@ class VoiceInputMethodService : InputMethodService(),
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+        if (listenState == ListenState.IDLE &&
+            statusLabel.startsWith("Grant mic") &&
+            checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        ) {
+            statusLabel = "Tap or hold pill to speak"
+        }
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
-        stopVoiceRecognition()
+        cancelVoiceRecognition()
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacksAndMessages(null)
         speechRecognizer?.destroy()
+        speechRecognizer = null
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         store.clear()
         super.onDestroy()
     }
 
     private fun startVoiceRecognition() {
-        if (listenState == ListenState.LISTENING) return
+        if (listenState != ListenState.IDLE) return
+
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            statusLabel = "Grant mic permission in VoiceFlow app"
+            val setupIntent = Intent(this, SetupActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            runCatching { startActivity(setupIntent) }
+            return
+        }
+
+        mainHandler.removeCallbacks(processingTimeoutRunnable)
+        mainHandler.removeCallbacks(relaunchRunnable)
         accumulatedText.clear()
+        triedCloudFallback = false
         listenState = ListenState.LISTENING
         statusLabel = "Listening..."
 
         if (speechRecognizer == null) {
-            speechRecognizer = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
-                SpeechRecognizer.isOnDeviceRecognitionAvailable(this)
-            ) {
-                SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
-            } else {
-                SpeechRecognizer.createSpeechRecognizer(this)
+            if (!initSpeechRecognizer(preferOnDevice = true)) {
+                statusLabel = "Speech recognition unavailable"
+                listenState = ListenState.IDLE
+                return
             }
         }
 
-        speechRecognizer?.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) {
+        launchRecognizerIntent()
+    }
+
+    private fun initSpeechRecognizer(preferOnDevice: Boolean): Boolean {
+        speechRecognizer?.destroy()
+        speechRecognizer = null
+
+        val created = if (
+            preferOnDevice &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            SpeechRecognizer.isOnDeviceRecognitionAvailable(this)
+        ) {
+            usingOnDeviceRecognizer = true
+            SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
+        } else if (SpeechRecognizer.isRecognitionAvailable(this)) {
+            usingOnDeviceRecognizer = false
+            SpeechRecognizer.createSpeechRecognizer(this)
+        } else {
+            null
+        } ?: return false
+
+        created.setRecognitionListener(recognitionListener)
+        speechRecognizer = created
+        return true
+    }
+
+    private val recognitionListener = object : RecognitionListener {
+        override fun onReadyForSpeech(params: Bundle?) {
+            if (listenState == ListenState.LISTENING) {
                 statusLabel = "Speak now..."
             }
+        }
 
-            override fun onBeginningOfSpeech() {}
+        override fun onBeginningOfSpeech() {}
 
-            override fun onRmsChanged(rmsdB: Float) {
+        override fun onRmsChanged(rmsdB: Float) {
+            if (listenState == ListenState.LISTENING) {
                 audioLevel = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)
             }
+        }
 
-            override fun onBufferReceived(buffer: ByteArray?) {}
+        override fun onBufferReceived(buffer: ByteArray?) {}
 
-            override fun onEndOfSpeech() {}
+        override fun onEndOfSpeech() {}
 
-            override fun onError(error: Int) {
-                if (listenState == ListenState.LISTENING &&
-                    (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT)
-                ) {
+        override fun onError(error: Int) {
+            if (listenState == ListenState.IDLE) return
+
+            if (listenState == ListenState.LISTENING &&
+                (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT)
+            ) {
+                mainHandler.postDelayed(relaunchRunnable, 150L)
+                return
+            }
+
+            if (listenState == ListenState.LISTENING &&
+                usingOnDeviceRecognizer &&
+                !triedCloudFallback &&
+                SpeechRecognizer.isRecognitionAvailable(this@VoiceInputMethodService)
+            ) {
+                triedCloudFallback = true
+                if (initSpeechRecognizer(preferOnDevice = false)) {
                     launchRecognizerIntent()
-                } else {
-                    finalizeAndCommit()
+                    return
                 }
             }
 
-            override fun onResults(results: Bundle?) {
-                val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                val best = matches?.firstOrNull().orEmpty()
-                if (best.isNotBlank()) {
-                    if (accumulatedText.isNotEmpty()) accumulatedText.append(" ")
-                    accumulatedText.append(best)
-                }
-
-                if (listenState == ListenState.LISTENING) {
-                    launchRecognizerIntent()
-                } else {
-                    finalizeAndCommit()
-                }
+            val errorMessage = when (error) {
+                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Mic permission needed in VoiceFlow app"
+                SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Speech service busy — tap to retry"
+                SpeechRecognizer.ERROR_AUDIO -> "Microphone unavailable"
+                SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network speech error"
+                else -> null
             }
 
-            override fun onPartialResults(partialResults: Bundle?) {
-                val partial = partialResults
-                    ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    ?.firstOrNull()
-                    .orEmpty()
-                if (partial.isNotBlank()) {
-                    val preview = (accumulatedText.toString() + " " + partial).trim()
-                    currentInputConnection?.setComposingText(preview, 1)
-                }
+            finalizeAndCommit(errorStatus = errorMessage)
+        }
+
+        override fun onResults(results: Bundle?) {
+            val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+            val best = matches?.firstOrNull().orEmpty()
+            if (best.isNotBlank()) {
+                if (accumulatedText.isNotEmpty()) accumulatedText.append(" ")
+                accumulatedText.append(best)
             }
 
-            override fun onEvent(eventType: Int, params: Bundle?) {}
-        })
+            if (listenState == ListenState.LISTENING) {
+                mainHandler.postDelayed(relaunchRunnable, 80L)
+            } else {
+                finalizeAndCommit()
+            }
+        }
 
-        launchRecognizerIntent()
+        override fun onPartialResults(partialResults: Bundle?) {
+            if (listenState != ListenState.LISTENING) return
+            val partial = partialResults
+                ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                ?.firstOrNull()
+                .orEmpty()
+            if (partial.isNotBlank()) {
+                val preview = (accumulatedText.toString() + " " + partial).trim()
+                currentInputConnection?.setComposingText(preview, 1)
+            }
+        }
+
+        override fun onEvent(eventType: Int, params: Bundle?) {}
     }
 
     private fun launchRecognizerIntent() {
@@ -199,19 +291,24 @@ class VoiceInputMethodService : InputMethodService(),
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            if (usingOnDeviceRecognizer) {
+                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            }
         }
         try {
             speechRecognizer?.startListening(intent)
         } catch (_: Exception) {
-            finalizeAndCommit()
+            finalizeAndCommit(errorStatus = "Could not start voice input")
         }
     }
 
     private fun stopVoiceRecognition() {
         if (listenState != ListenState.LISTENING) return
+        mainHandler.removeCallbacks(relaunchRunnable)
         listenState = ListenState.PROCESSING
+        statusLabel = "Finishing..."
         audioLevel = 0f
+        mainHandler.postDelayed(processingTimeoutRunnable, 2500L)
         try {
             speechRecognizer?.stopListening()
         } catch (_: Exception) {
@@ -219,18 +316,30 @@ class VoiceInputMethodService : InputMethodService(),
         }
     }
 
-    private fun finalizeAndCommit() {
+    private fun cancelVoiceRecognition() {
+        mainHandler.removeCallbacks(relaunchRunnable)
+        mainHandler.removeCallbacks(processingTimeoutRunnable)
+        if (listenState != ListenState.IDLE) {
+            runCatching { speechRecognizer?.cancel() }
+            finalizeAndCommit()
+        }
+    }
+
+    private fun finalizeAndCommit(errorStatus: String? = null) {
+        mainHandler.removeCallbacks(relaunchRunnable)
+        mainHandler.removeCallbacks(processingTimeoutRunnable)
+
         val cleaned = cleanTranscript(accumulatedText.toString())
-        currentInputConnection?.finishComposingText()
 
         if (cleaned.isNotEmpty()) {
-            currentInputConnection?.setComposingText("", 1)
             val toInsert = "$cleaned "
             currentInputConnection?.commitText(toInsert, 1)
             lastCommittedPhrase = toInsert
             statusLabel = "✦ Inserted"
         } else {
-            statusLabel = "Tap or hold pill to speak"
+            currentInputConnection?.setComposingText("", 1)
+            currentInputConnection?.finishComposingText()
+            statusLabel = errorStatus ?: "Tap or hold pill to speak"
         }
 
         accumulatedText.clear()
@@ -244,6 +353,7 @@ class VoiceInputMethodService : InputMethodService(),
 
         text = text.replace(Regex("\\b(um+|uh+|er+|ah+)\\b[,\\s]*", RegexOption.IGNORE_CASE), "")
         text = text.replace(Regex("\\s{2,}"), " ").trim()
+        if (text.isEmpty()) return ""
         text = text.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
 
         if (!text.endsWith(".") && !text.endsWith("?") && !text.endsWith("!")) {
@@ -256,7 +366,7 @@ class VoiceInputMethodService : InputMethodService(),
 
     private fun switchToPreviousOrNextIme() {
         val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             switchToNextInputMethod(false)
         } else {
             @Suppress("DEPRECATION")

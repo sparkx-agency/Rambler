@@ -23,6 +23,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -35,6 +36,7 @@ fun VoiceKeyboardScreen(
     statusLabel: String,
     onStartListening: () -> Unit,
     onStopListening: () -> Unit,
+    onCancelOrReset: () -> Unit,
     onToggleQwerty: () -> Unit,
     onSwitchSystemKeyboard: () -> Unit,
     onCommitText: (String) -> Unit,
@@ -43,6 +45,7 @@ fun VoiceKeyboardScreen(
     onEnterKey: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
+    val currentListenState by rememberUpdatedState(listenState)
 
     val infiniteTransition = rememberInfiniteTransition(label = "geminiGlow")
     val shimmerShift by infiniteTransition.animateFloat(
@@ -73,134 +76,157 @@ fun VoiceKeyboardScreen(
             .navigationBarsPadding()
     ) {
         if (!showQwertyDrawer) {
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(94.dp)
-                    .padding(horizontal = 24.dp),
-                contentAlignment = Alignment.Center
+                    .padding(horizontal = 24.dp, vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                Text(
+                    text = statusLabel,
+                    color = if (listenState == ListenState.LISTENING) Color(0xFF93C5FD) else Color(0xFF64748B),
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(70.dp)
-                        .align(Alignment.BottomCenter)
-                        .blur(26.dp)
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    Color(0xFF4285F4).copy(alpha = if (listenState == ListenState.LISTENING) 0.45f else 0.18f)
-                                )
-                            )
-                        )
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .height(74.dp),
+                    contentAlignment = Alignment.Center
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(50.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color(0xFF161C29))
-                            .border(1.dp, Color(0xFF283247), RoundedCornerShape(16.dp))
-                            .combinedClickable(
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onToggleQwerty()
-                                },
-                                onLongClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onSwitchSystemKeyboard()
-                                }
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("⌨", fontSize = 20.sp, color = Color(0xFFCBD5E1))
-                    }
-
-                    Box(contentAlignment = Alignment.Center) {
-                        val haloScale = if (listenState == ListenState.LISTENING) 1.06f + (audioLevel * 0.22f) else 1f
-                        Box(
-                            modifier = Modifier
-                                .width(148.dp)
-                                .height(56.dp)
-                                .scale(haloScale)
-                                .blur(14.dp)
-                                .clip(CircleShape)
-                                .background(geminiBrush)
-                        )
-
-                        Box(
-                            modifier = Modifier
-                                .width(146.dp)
-                                .height(56.dp)
-                                .clip(CircleShape)
-                                .background(geminiBrush)
-                                .padding(2.dp)
-                                .pointerInput(listenState) {
-                                    detectTapGestures(
-                                        onPress = {
-                                            val startTime = System.currentTimeMillis()
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            if (listenState == ListenState.IDLE) {
-                                                onStartListening()
-                                                tryAwaitRelease()
-                                                val held = System.currentTimeMillis() - startTime
-                                                if (held > 380L) {
-                                                    onStopListening()
-                                                }
-                                            } else if (listenState == ListenState.LISTENING) {
-                                                onStopListening()
-                                            }
-                                        }
+                            .fillMaxWidth()
+                            .height(64.dp)
+                            .align(Alignment.BottomCenter)
+                            .blur(26.dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        Color(0xFF4285F4).copy(alpha = if (listenState == ListenState.LISTENING) 0.45f else 0.18f)
                                     )
-                                },
+                                )
+                            )
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color(0xFF161C29))
+                                .border(1.dp, Color(0xFF283247), RoundedCornerShape(16.dp))
+                                .combinedClickable(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onToggleQwerty()
+                                    },
+                                    onLongClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onSwitchSystemKeyboard()
+                                    }
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
+                            Text("⌨", fontSize = 20.sp, color = Color(0xFFCBD5E1))
+                        }
+
+                        Box(contentAlignment = Alignment.Center) {
+                            val haloScale = if (listenState == ListenState.LISTENING) 1.06f + (audioLevel * 0.22f) else 1f
                             Box(
                                 modifier = Modifier
-                                    .fillMaxSize()
+                                    .width(148.dp)
+                                    .height(56.dp)
+                                    .scale(haloScale)
+                                    .blur(14.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFF101522).copy(alpha = 0.88f)),
+                                    .background(geminiBrush)
+                            )
+
+                            Box(
+                                modifier = Modifier
+                                    .width(146.dp)
+                                    .height(56.dp)
+                                    .clip(CircleShape)
+                                    .background(geminiBrush)
+                                    .padding(2.dp)
+                                    .pointerInput(Unit) {
+                                        detectTapGestures(
+                                            onPress = {
+                                                val stateAtPress = currentListenState
+                                                val startTime = System.currentTimeMillis()
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                when (stateAtPress) {
+                                                    ListenState.IDLE -> {
+                                                        onStartListening()
+                                                        val released = tryAwaitRelease()
+                                                        val held = System.currentTimeMillis() - startTime
+                                                        if (released && held > 380L && currentListenState == ListenState.LISTENING) {
+                                                            onStopListening()
+                                                        }
+                                                    }
+                                                    ListenState.LISTENING -> {
+                                                        onStopListening()
+                                                    }
+                                                    ListenState.PROCESSING -> {
+                                                        onCancelOrReset()
+                                                    }
+                                                }
+                                            }
+                                        )
+                                    },
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = when (listenState) {
-                                        ListenState.IDLE -> "🎙"
-                                        ListenState.LISTENING -> "•••"
-                                        ListenState.PROCESSING -> "✦"
-                                    },
-                                    fontSize = 20.sp,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF101522).copy(alpha = 0.88f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = when (listenState) {
+                                            ListenState.IDLE -> "🎙"
+                                            ListenState.LISTENING -> "•••"
+                                            ListenState.PROCESSING -> "✦"
+                                        },
+                                        fontSize = 20.sp,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
-                    }
 
-                    Box(
-                        modifier = Modifier
-                            .size(50.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color(0xFF161C29))
-                            .border(1.dp, Color(0xFF283247), RoundedCornerShape(16.dp))
-                            .combinedClickable(
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onBackspace()
-                                },
-                                onLongClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onUndoLastPhrase()
-                                }
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("⌫", fontSize = 19.sp, color = Color(0xFFCBD5E1))
+                        Box(
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color(0xFF161C29))
+                                .border(1.dp, Color(0xFF283247), RoundedCornerShape(16.dp))
+                                .combinedClickable(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onBackspace()
+                                    },
+                                    onLongClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onUndoLastPhrase()
+                                    }
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("⌫", fontSize = 19.sp, color = Color(0xFFCBD5E1))
+                        }
                     }
                 }
             }
